@@ -1,0 +1,99 @@
+# How to connect R to the Toggl API
+
+## Rationale
+
+I became overwhelmed with the amount of work that I have to do, and felt that I do not have any free time. This is obvously not true and to visualise my procrastination practices I decided to track each second of my time for the next few weeks. 
+
+The Toggl is a great tool to track time. The only problem I had with its online platform is that one can not easily get the all important info from it, and being a researcher - graphing is a big issue for me, so I can NOT accept pie chart plots. They are ok for fast visualisation but I felt I will require something more powerful - like R and ggplot!
+
+To be able to access my data I figured that they could be loaded into R using the Toggl API. 
+
+This post is my try (also a pure procrastination) to minimise my procrastination practices using easily accessible data that will tell me where I am doing the worst and which parts of my routine have to bo reviewed.
+
+First we will need our API token - which can be found online in our account settings.
+
+https://www.toggl.com/app/profile
+
+
+```{r}
+key  <- '3e2bdcf7243ce719f67b39a2fae01076'
+```
+
+We allso need communication which is done by httr package
+This package enables us to use calls like the CURL functions under linux. 
+The calling is jus slightly different. 
+
+We need to load base 64 encoder for R and encode the authentication string.
+After getting to 
+
+Now to get time enteries in the specific range we will need times in ISO 8601 format. 
+
+```{r}
+start <- "2015-01-01T00:00:00+02:00"
+end <- "2016-01-19T00:00:00+02:00"
+```
+
+And here is my fnction which will give you the dataframe of your time enteries.
+
+```{r}
+get_toggl_enteries <- function(start,end,api_token){
+    #Base64 is requirec for communication with the API because it encodes the username:password
+    require(base64enc)
+    key <- api_token
+    #make the key conformant with the requirements of the API
+    keys <- charToRaw(paste0(key,":api_token"))
+    auth <- paste0("Basic ",base64encode(keys))
+    #we will use httr to get responses from the server
+    require(httr)
+    #First get to the proper url
+    TE <- "https://www.toggl.com/api/v8/time_entries"
+    enteries <-GET(url = TE,
+                   #the dates go into the query
+               query= list(start_date=start,
+                           end_date=end),
+               #Authorization into the header
+               add_headers (Authorization = auth)
+#                verbose()
+               )
+    require(RJSONIO)
+    #now we will create a database out of the downloaded enteries
+    Jent<- rawToChar(enteries$content) # This is a JSON file 
+    #Getting rid of these ugly null values
+    json <- fromJSON(Jent,nullValue = NA)
+    # Replace (empty) lists by NA and convert to data frames:
+
+    dat <- lapply(json, function(j) {
+    as.data.frame(replace(j, sapply(j, is.list), NA))
+    })
+    # Create a single data frame:
+
+    require(plyr)
+    res <- rbind.fill(dat)
+
+    return(res)
+}
+
+enteries <- get_toggl_enteries(start,end,key)
+```
+
+Now with such a nice database we can plot what we want. 
+For example the summarized ammount of time we spent on a certain task type:
+
+```{r}
+require(ggplot2)
+qplot(tags, data=enteries[!is.na(enteries$tags),], geom="bar", weight = duration,xlab="Category", ylab="Time spent in seconds")
+```
+
+You can see that I am not doing enough planning. And this is probably the reason why I am having anxiety that I will not be able to finish everything that is on my plate.
+
+But if we add procrastination tasks into this picture:
+
+```{r}
+levels(enteries$tags) <- c(levels(enteries$tags),"procrastination")
+enteries$tags[is.na(enteries$tags)] <- "procrastination"
+qplot(tags, data=enteries[!is.na(enteries$tags),], geom="bar", weight = duration,xlab="Category", ylab="Time spent in seconds")
+```
+
+We can only see how time is wasted... 
+
+So enough procrastinating. Off to some really important assignments... Ugh...
